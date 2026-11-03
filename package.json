@@ -1,0 +1,47 @@
+{
+  "name": "pinotify",
+  "version": "0.1.0",
+  "packageManager": "pnpm@11.23.0",
+  "description": "Notification service (email and SMS, calls later) for the Raspberry Pi production ecosystem, built on @jsilvanus/notify-core",
+  "private": true,
+  "type": "module",
+  "license": "EUPL-1.2",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "test": "tsx --test tests/*.test.ts",
+    "cli": "tsx src/cli.ts"
+  },
+  "bin": {
+    "pinotify": "bin/pinotify.mjs"
+  },
+  "dependencies": {
+    "@jsilvanus/notify-core": "^0.1.1",
+    "fastify": "^5.2.1"
+  },
+  "optionalDependencies": {
+    "nodemailer": "^9.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.9.0"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "openapi"
+  ],
+  "pi": {
+    "service": "pinotify",
+    "layer": "Layer 3: Orchestration & State",
+    "displayName": "pinotify",
+    "port": 3109,
+    "healthEndpoint": "/health",
+    "envPortVar": "PINOTIFY_PORT"
+  }
+}
