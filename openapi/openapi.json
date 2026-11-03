@@ -1,0 +1,107 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "pinotify",
+    "version": "0.1.0",
+    "description": "Notification service (email and SMS) for the Pi ecosystem, built on @jsilvanus/notify-core. Bearer token on /api: the send token may only call POST /api/v1/notify; the admin token may call everything. In simulation mode without tokens the API is open and nothing is really sent."
+  },
+  "paths": {
+    "/health": { "get": { "summary": "Liveness and mode", "responses": { "200": { "description": "ok" } } } },
+    "/api/v1/notify": {
+      "post": {
+        "summary": "Send a message to a contact (consent, cooldown and rate limits apply)",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NotifyRequest" } } } },
+        "responses": {
+          "200": { "description": "Result: sent, or skipped_inactive / skipped_no_consent / skipped_no_address / skipped_no_provider", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Result" } } } },
+          "400": { "description": "Invalid body" },
+          "404": { "description": "Unknown contact" },
+          "429": { "description": "cooldown or rate_limited", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Result" } } } },
+          "502": { "description": "Provider failed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Result" } } } }
+        }
+      }
+    },
+    "/api/v1/contacts": {
+      "get": { "summary": "List contacts (admin)", "responses": { "200": { "description": "Contacts", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Contact" } } } } } } },
+      "post": { "summary": "Add or replace a contact (admin)", "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ContactInput" } } } }, "responses": { "201": { "description": "Saved" }, "400": { "description": "Invalid" }, "409": { "description": "Slug belongs to an environment contact" } } }
+    },
+    "/api/v1/contacts/{slug}": {
+      "parameters": [{ "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": { "summary": "One contact (admin)", "responses": { "200": { "description": "Contact", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Contact" } } } }, "404": { "description": "Unknown" } } },
+      "put": { "summary": "Replace a contact (admin)", "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ContactInput" } } } }, "responses": { "200": { "description": "Saved" }, "400": { "description": "Invalid" }, "409": { "description": "Environment contact" } } },
+      "delete": { "summary": "Delete a contact (admin)", "responses": { "204": { "description": "Deleted" }, "404": { "description": "Unknown" }, "409": { "description": "Environment contact" } } }
+    },
+    "/api/v1/provider": {
+      "get": { "summary": "Provider setting; secrets are never returned (admin)", "responses": { "200": { "description": "Status", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProviderStatus" } } } } } },
+      "put": {
+        "summary": "Set the provider (admin). Secrets left out keep their stored value.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProviderInput" } } } },
+        "responses": { "200": { "description": "Status" }, "400": { "description": "Invalid" } }
+      },
+      "delete": { "summary": "Remove the provider (admin)", "responses": { "200": { "description": "Status" } } }
+    },
+    "/api/v1/log": {
+      "get": { "summary": "Recent attempts, newest first; slugs and outcomes only, no addresses or texts (admin)", "parameters": [{ "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 500, "default": 100 } }], "responses": { "200": { "description": "Entries" } } }
+    },
+    "/api/v1/outbox": {
+      "get": { "summary": "Messages the simulated provider accepted (simulation mode only, admin)", "responses": { "200": { "description": "Messages" }, "404": { "description": "Not in simulation mode" } } }
+    }
+  },
+  "components": {
+    "schemas": {
+      "NotifyRequest": {
+        "type": "object",
+        "required": ["channel", "contact", "text"],
+        "properties": {
+          "channel": { "type": "string", "enum": ["email", "sms"] },
+          "contact": { "type": "string", "description": "Contact slug" },
+          "text": { "type": "string", "maxLength": 1000 },
+          "subject": { "type": "string", "maxLength": 200 },
+          "trigger": { "type": "string", "maxLength": 40, "description": "Free label for the log, for example rundown or manual" }
+        }
+      },
+      "Result": {
+        "type": "object",
+        "properties": { "status": { "type": "string" }, "providerId": { "type": "string" }, "error": { "type": "string" } }
+      },
+      "ContactInput": {
+        "type": "object",
+        "required": ["slug"],
+        "properties": {
+          "slug": { "type": "string", "description": "Lowercase letters, digits, hyphens; admin and all are reserved" },
+          "name": { "type": "string" },
+          "email": { "type": "string" },
+          "smsNumber": { "type": "string", "description": "With country code, e.g. +358 40 123 4567" },
+          "consentEmail": { "type": "boolean", "default": false },
+          "consentSms": { "type": "boolean", "default": false },
+          "active": { "type": "boolean", "default": true }
+        }
+      },
+      "Contact": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ContactInput" },
+          { "type": "object", "properties": { "fixed": { "type": "boolean", "description": "Set by the environment (superuser); cannot be changed over the API" } } }
+        ]
+      },
+      "ProviderInput": {
+        "type": "object",
+        "required": ["provider"],
+        "properties": {
+          "provider": { "type": "string", "enum": ["brevo", "smtp"] },
+          "config": { "type": "object", "description": "brevo: senderEmail, senderName?, smsSender?; smtp: host, port, secure?, user?, from" },
+          "secrets": { "type": "object", "description": "brevo: apiKey; smtp: pass. Write-only." }
+        }
+      },
+      "ProviderStatus": {
+        "type": "object",
+        "properties": {
+          "configured": { "type": "boolean" },
+          "provider": { "type": "string" },
+          "config": { "type": "object" },
+          "secretsSet": { "type": "object", "additionalProperties": { "type": "boolean" } },
+          "channels": { "type": "array", "items": { "type": "string" } },
+          "simulated": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}
